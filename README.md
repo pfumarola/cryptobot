@@ -6,7 +6,7 @@ This is a triangular arbitrage bot written in Go. It monitors cryptocurrency exc
 
 ## Features
 - Vuejs web UI
-- Real-time monitoring of multiple exchanges
+- Real-time monitoring
 - Supports a wide range of cryptocurrencies
 - Automated trading
 - Detailed logging and reporting

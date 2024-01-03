@@ -25,9 +25,10 @@ type Trader struct {
 	bookTickerService *binance_connector.TickerBookTicker
 	bookTick          []*binance_connector.TickerBookTickerResponse
 	exchangeInfo      *internal.ExchangeInfo
+	telegramCh        chan string
 }
 
-func NewTrader(client *binance_connector.Client, holdingAsset string, minProfitability float64) *Trader {
+func NewTrader(client *binance_connector.Client, holdingAsset string, minProfitability float64, telegramCh chan string) *Trader {
 	exchangeInfo := new(internal.ExchangeInfo)
 	return &Trader{
 		holdingAsset:      holdingAsset,
@@ -35,6 +36,7 @@ func NewTrader(client *binance_connector.Client, holdingAsset string, minProfita
 		client:            client,
 		bookTickerService: client.NewTickerBookTickerService(),
 		exchangeInfo:      exchangeInfo.NewExchangeInfo(client),
+		telegramCh:        telegramCh,
 	}
 }
 
@@ -52,7 +54,9 @@ func (t *Trader) checkOpportunity() (float64, float64) {
 	}
 	//fmt.Println(fmt.Sprintf("BBS %.4f %.4f %.14f %.4f", potentialProfitBBS, ask1, bid2, bid3))
 	if potentialProfitBSS > t.minProfitability {
-		fmt.Println(fmt.Sprintf("BSS %s->%s->%s %.4f %.4f %.14f %.4f", t.firstPair, t.secondPair, t.thirdPair, potentialProfitBSS, ask1, bid2, bid3))
+		s := fmt.Sprintf("BSS %s->%s->%s %.4f %.4f %.14f %.4f", t.firstPair, t.secondPair, t.thirdPair, potentialProfitBSS, ask1, bid2, bid3)
+		fmt.Println(s)
+		t.telegramCh <- s
 		t.createOrder(t.firstPair, t.secondPair, t.thirdPair, "BUY", 100, "BSS")
 	} else if potentialProfitBBS > t.minProfitability {
 		fmt.Println("Opportunity found (BUY BUY SELL))", potentialProfitBBS)
@@ -113,10 +117,10 @@ func (t *Trader) getPrice(symbol string) (float64, float64) {
 	return 0.0, 0.0
 }
 
-func (t *Trader) getBalance(s1 string, s2 string, s3 string) {
+func (t *Trader) getBalance(s1 string, s2 string, s3 string) []binance_connector.Balance {
 	val, err := t.client.NewGetAccountService().Do(context.Background())
 	check(err)
-	fmt.Println(t.filterBalance(val.Balances, []string{s1, s2, s3}), "\n")
+	return t.filterBalance(val.Balances, []string{s1, s2, s3})
 }
 
 func (t *Trader) filterBalance(balances []binance_connector.Balance, names []string) []binance_connector.Balance {
@@ -143,7 +147,10 @@ func (t *Trader) createOrder(symbol1, symbol2, symbol3, side1 string, quantity1 
 	base2, quote2 := t.splitPair(symbol2)
 	base3, quote3 := t.splitPair(symbol3)
 
+	tgMsg := ""
+
 	scale := 0.0
+	var balance []binance_connector.Balance
 
 	base1Decimals := countDecimals(t.exchangeInfo.GetSymbolLotSize(base1 + quote1).StepSize)
 	base2Decimals := countDecimals(t.exchangeInfo.GetSymbolLotSize(base2 + quote2).StepSize)
@@ -151,7 +158,9 @@ func (t *Trader) createOrder(symbol1, symbol2, symbol3, side1 string, quantity1 
 	fmt.Println("base3Decimals: ", base3Decimals)
 	_ = base1Decimals
 
-	t.getBalance(base1, quote1, quote2)
+	balance = t.getBalance(base1, quote1, quote2)
+	fmt.Println("Balance: ", balance)
+	tgMsg += fmt.Sprintf("Balance: %s \n", balance)
 
 	newOrder, err := t.client.NewCreateOrderService().Symbol(base1 + quote1).
 		Side("BUY").Type("MARKET").QuoteOrderQty(quantity1).
@@ -160,6 +169,7 @@ func (t *Trader) createOrder(symbol1, symbol2, symbol3, side1 string, quantity1 
 	fmt.Println(binance_connector.PrettyPrint(newOrder))
 
 	t.getBalance(base1, quote1, quote2)
+	fmt.Println("Balance: ", balance)
 
 	quantity2, _ := strconv.ParseFloat(newOrder.(*binance_connector.CreateOrderResponseFULL).ExecutedQty, 64)
 	scale = math.Pow(10, float64(base2Decimals))
@@ -175,6 +185,7 @@ func (t *Trader) createOrder(symbol1, symbol2, symbol3, side1 string, quantity1 
 	fmt.Println(binance_connector.PrettyPrint(newOrder))
 
 	t.getBalance(base1, quote1, quote2)
+	fmt.Println("Balance: ", balance)
 
 	quantity3, _ := strconv.ParseFloat(newOrder.(*binance_connector.CreateOrderResponseFULL).CumulativeQuoteQty, 64)
 	scale = math.Pow(10, float64(base3Decimals))
@@ -189,67 +200,15 @@ func (t *Trader) createOrder(symbol1, symbol2, symbol3, side1 string, quantity1 
 	check(err)
 	fmt.Println(binance_connector.PrettyPrint(newOrder))
 
-	t.getBalance(base1, quote1, quote2)
+	balance = t.getBalance(base1, quote1, quote2)
+	fmt.Println("Balance: ", balance)
+	tgMsg += fmt.Sprintf("Balance: %s \n", balance)
 
 	fmt.Println("End of arbitrage")
+	tgMsg += fmt.Sprintf("End of arbitrage")
+
+	t.telegramCh <- tgMsg
 }
-
-// func (t *Trader) createReverseOrder(symbol1, symbol2, symbol3, side1 string, quantity1 float64, arbitrageType string) {
-
-// 	base1, quote1 := t.splitPair(symbol1)
-// 	base2, quote2 := t.splitPair(symbol2)
-// 	base3, quote3 := t.splitPair(symbol3)
-
-// 	scale := 0.0
-
-// 	base1Decimals := countDecimals(t.exchangeInfo.GetSymbolLotSize(base1 + quote1).StepSize)
-// 	base2Decimals := countDecimals(t.exchangeInfo.GetSymbolLotSize(base2 + quote2).StepSize)
-// 	base3Decimals := countDecimals(t.exchangeInfo.GetSymbolLotSize(base3 + quote3).StepSize)
-// 	fmt.Println("base3Decimals: ", base3Decimals)
-// 	_ = base1Decimals
-
-// 	t.getBalance(base1, quote1, quote2)
-
-// 	newOrder, err := t.client.NewCreateOrderService().Symbol(base1 + quote1).
-// 		Side("BUY").Type("MARKET").QuoteOrderQty(quantity1).
-// 		Do(context.Background())
-// 	check(err)
-// 	fmt.Println(binance_connector.PrettyPrint(newOrder))
-
-// 	t.getBalance(base1, quote1, quote2)
-
-// 	quantity2, _ := strconv.ParseFloat(newOrder.(*binance_connector.CreateOrderResponseFULL).ExecutedQty, 64)
-// 	scale = math.Pow(10, float64(base2Decimals))
-// 	floatQuantity2 := math.Floor(quantity2*scale) / scale
-
-// 	check(err)
-// 	fmt.Println("Quantity2: ", floatQuantity2)
-
-// 	newOrder, err = t.client.NewCreateOrderService().Symbol(base2 + quote2).
-// 		Side("SELL").Type("MARKET").Quantity(floatQuantity2).
-// 		Do(context.Background())
-// 	check(err)
-// 	fmt.Println(binance_connector.PrettyPrint(newOrder))
-
-// 	t.getBalance(base1, quote1, quote2)
-
-// 	quantity3, _ := strconv.ParseFloat(newOrder.(*binance_connector.CreateOrderResponseFULL).CumulativeQuoteQty, 64)
-// 	scale = math.Pow(10, float64(base3Decimals))
-// 	floatQuantity3 := math.Floor(quantity3*scale) / scale
-
-// 	check(err)
-
-// 	fmt.Println("Quantity3: ", floatQuantity3)
-// 	newOrder, err = t.client.NewCreateOrderService().Symbol(base3 + quote3).
-// 		Side("SELL").Type("MARKET").Quantity(floatQuantity3).
-// 		Do(context.Background())
-// 	check(err)
-// 	fmt.Println(binance_connector.PrettyPrint(newOrder))
-
-// 	t.getBalance(base1, quote1, quote2)
-
-// 	fmt.Println("End of arbitrage")
-// }
 
 func check(e error) {
 	if e != nil {
@@ -283,9 +242,29 @@ func main() {
 
 	//client.Debug = true
 
-	trader := NewTrader(client, "USDT", 0.05)
+	TELEGRAM_TOKEN := os.Getenv("TELEGRAM_TOKEN")
+	TELEGRAM_CHAT_ID := os.Getenv("TELEGRAM_CHAT_ID")
+
+	telegramCh := make(chan string)
+
+	trader := NewTrader(client, "USDT", 0.005, telegramCh)
+
+	go broker(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, telegramCh)
 
 	trader.ticker()
 
 	wg.Wait()
+}
+
+func broker(TELEGRAM_TOKEN string, TELEGRAM_CHAT_ID string, telegramCh chan string) {
+	var telegramBot *internal.TelegramBot
+
+	telegramBot = internal.NewTelegramBot(TELEGRAM_TOKEN)
+	go telegramBot.Start()
+	for {
+		select {
+		case msg := <-telegramCh:
+			telegramBot.SendMessage(TELEGRAM_CHAT_ID, msg)
+		}
+	}
 }

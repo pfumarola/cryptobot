@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
@@ -13,11 +14,13 @@ import (
 )
 
 type TelegramBot struct {
-	channelID string
+	bot        *gotgbot.Bot
+	dispatcher *ext.Dispatcher
+	updater    *ext.Updater
 }
 
-func (t *TelegramBot) NewTelegramBot(token string, channelID string) *TelegramBot {
-	// Create bot from environment value.
+func NewTelegramBot(token string) *TelegramBot {
+
 	b, err := gotgbot.NewBot(token, &gotgbot.BotOpts{
 		BotClient: &gotgbot.BaseBotClient{
 			Client: http.Client{},
@@ -45,8 +48,17 @@ func (t *TelegramBot) NewTelegramBot(token string, channelID string) *TelegramBo
 	// Add echo handler to reply to all text messages.
 	dispatcher.AddHandler(handlers.NewMessage(message.Text, echo))
 
+	return &TelegramBot{
+		bot:        b,
+		dispatcher: dispatcher,
+		updater:    updater,
+	}
+}
+
+func (t *TelegramBot) Start() {
+
 	// Start receiving updates.
-	err = updater.StartPolling(b, &ext.PollingOpts{
+	err := t.updater.StartPolling(t.bot, &ext.PollingOpts{
 		DropPendingUpdates: true,
 		GetUpdatesOpts: &gotgbot.GetUpdatesOpts{
 			Timeout: 9,
@@ -59,13 +71,22 @@ func (t *TelegramBot) NewTelegramBot(token string, channelID string) *TelegramBo
 	if err != nil {
 		panic("failed to start polling: " + err.Error())
 	}
-	log.Printf("%s has been started...\n", b.User.Username)
+	log.Printf("%s has been started...\n", t.bot.User.Username)
 
 	// Idle, to keep updates coming in, and avoid bot stopping.
-	updater.Idle()
+	t.updater.Idle()
+}
 
-	return &TelegramBot{
-		channelID: channelID,
+func (t *TelegramBot) SendMessage(chatID string, message string) {
+	intChatID, err1 := strconv.ParseInt(chatID, 10, 64)
+
+	if err1 != nil {
+		fmt.Println(err1)
+	}
+
+	_, err := t.bot.SendMessage(intChatID, message, nil)
+	if err != nil {
+		fmt.Println(err)
 	}
 }
 
@@ -76,8 +97,4 @@ func echo(b *gotgbot.Bot, ctx *ext.Context) error {
 		return fmt.Errorf("failed to echo message: %w", err)
 	}
 	return nil
-}
-
-func (t *TelegramBot) sendMessage(message string) {
-
 }
