@@ -22,17 +22,21 @@ type Trader struct {
 	thirdPair         string
 	holdingAsset      string
 	minProfitability  float64
+	feePercentage     float64
+	orderAmount       float64
 	bookTickerService *binance_connector.TickerBookTicker
 	bookTick          []*binance_connector.TickerBookTickerResponse
 	exchangeInfo      *internal.ExchangeInfo
 	telegramCh        chan string
 }
 
-func NewTrader(client *binance_connector.Client, holdingAsset string, minProfitability float64, telegramCh chan string) *Trader {
+func NewTrader(client *binance_connector.Client, holdingAsset string, minProfitability float64, feePercentage float64, orderAmount float64, telegramCh chan string) *Trader {
 	exchangeInfo := new(internal.ExchangeInfo)
 	return &Trader{
 		holdingAsset:      holdingAsset,
 		minProfitability:  minProfitability,
+		feePercentage:     feePercentage,
+		orderAmount:       orderAmount,
 		client:            client,
 		bookTickerService: client.NewTickerBookTickerService(),
 		exchangeInfo:      exchangeInfo.NewExchangeInfo(client),
@@ -44,8 +48,8 @@ func (t *Trader) checkOpportunity() (float64, float64) {
 	bid1, ask1 := t.getPrice(t.firstPair)
 	bid2, ask2 := t.getPrice(t.secondPair)
 	bid3, ask3 := t.getPrice(t.thirdPair)
-	potentialProfitBSS := (1/ask1)*bid2*bid3 - 1
-	potentialProfitBBS := (1/ask3)*(1/ask2)*bid1 - 1
+	potentialProfitBSS := (1/ask1)*bid2*bid3 - 1 - (t.feePercentage * 4)
+	potentialProfitBBS := (1/ask3)*(1/ask2)*bid1 - 1 - (t.feePercentage * 4)
 	if math.IsInf(potentialProfitBSS, 0) {
 		potentialProfitBSS = 0.0
 	}
@@ -57,9 +61,9 @@ func (t *Trader) checkOpportunity() (float64, float64) {
 		s := fmt.Sprintf("BSS %s->%s->%s %.4f %.4f %.14f %.4f", t.firstPair, t.secondPair, t.thirdPair, potentialProfitBSS, ask1, bid2, bid3)
 		fmt.Println(s)
 		t.telegramCh <- s
-		t.createOrder(t.firstPair, t.secondPair, t.thirdPair, "BUY", 100, "BSS")
+		t.createOrder(t.firstPair, t.secondPair, t.thirdPair, "BUY", t.orderAmount)
 	} else if potentialProfitBBS > t.minProfitability {
-		fmt.Println("Opportunity found (BUY BUY SELL))", potentialProfitBBS)
+		//fmt.Println("Opportunity found (BUY BUY SELL))", potentialProfitBBS)
 		//t.createOrder(t.firstPair, t.thirdPair, t.secondPair, "BUY", 100, "BBS")
 	}
 	return potentialProfitBSS, potentialProfitBBS
@@ -79,8 +83,8 @@ func (t *Trader) onTick(ticker *time.Ticker, done chan bool) {
 		case <-ticker.C:
 			go t.updateBookTick()
 			//cycle through all the pairs in ArbitrageTriplets
-			maxPotentialProfitBSS := 0.0
-			maxPotentialProfitBBS := 0.0
+			maxPotentialProfitBSS := -100000.0
+			maxPotentialProfitBBS := -100000.0
 			for _, v := range internal.ArbitrageTriplets {
 				t.firstPair = v.FirstPair
 				t.secondPair = v.SecondPair
@@ -94,7 +98,7 @@ func (t *Trader) onTick(ticker *time.Ticker, done chan bool) {
 				}
 			}
 			timestamp := time.Now().Format("2006-01-02 15:04:05")
-			fmt.Println(timestamp, " Max potential profit: ", fmt.Sprintf("%.6f", maxPotentialProfitBSS), " ", fmt.Sprintf("%.6f", maxPotentialProfitBBS))
+			fmt.Println(timestamp, " Max potential profit: ", fmt.Sprintf("%.8f", maxPotentialProfitBSS), " ", fmt.Sprintf("%.8f", maxPotentialProfitBBS))
 		}
 	}
 }
@@ -120,7 +124,7 @@ func (t *Trader) getPrice(symbol string) (float64, float64) {
 func (t *Trader) getBalance(s1 string, s2 string, s3 string) []binance_connector.Balance {
 	val, err := t.client.NewGetAccountService().Do(context.Background())
 	check(err)
-	return t.filterBalance(val.Balances, []string{s1, s2, s3})
+	return t.filterBalance(val.Balances, []string{s1, s2, s3, "BNB"})
 }
 
 func (t *Trader) filterBalance(balances []binance_connector.Balance, names []string) []binance_connector.Balance {
@@ -141,7 +145,7 @@ func (t *Trader) splitPair(pair string) (string, string) {
 	return split[0], split[1]
 }
 
-func (t *Trader) createOrder(symbol1, symbol2, symbol3, side1 string, quantity1 float64, arbitrageType string) {
+func (t *Trader) createOrder(symbol1, symbol2, symbol3, side1 string, quantity1 float64) {
 
 	base1, quote1 := t.splitPair(symbol1)
 	base2, quote2 := t.splitPair(symbol2)
@@ -247,7 +251,7 @@ func main() {
 
 	telegramCh := make(chan string)
 
-	trader := NewTrader(client, "USDT", 0.005, telegramCh)
+	trader := NewTrader(client, "USDT", 0.01, 0.00075, 100, telegramCh) // 0.01 -> 1% min profitability
 
 	go broker(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, telegramCh)
 
@@ -264,6 +268,7 @@ func broker(TELEGRAM_TOKEN string, TELEGRAM_CHAT_ID string, telegramCh chan stri
 	for {
 		select {
 		case msg := <-telegramCh:
+			_ = msg
 			telegramBot.SendMessage(TELEGRAM_CHAT_ID, msg)
 		}
 	}
