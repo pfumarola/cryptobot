@@ -72,7 +72,7 @@ func (t *Trader) checkOpportunity() (float64, float64) {
 func (t *Trader) updateBookTick() {
 	var err error
 	t.bookTick, err = t.bookTickerService.Do(context.Background())
-	check(err)
+	t.check(err)
 }
 
 func (t *Trader) onTick(ticker *time.Ticker, done chan bool) {
@@ -123,7 +123,7 @@ func (t *Trader) getPrice(symbol string) (float64, float64) {
 
 func (t *Trader) getBalance(s1 string, s2 string, s3 string) []binance_connector.Balance {
 	val, err := t.client.NewGetAccountService().Do(context.Background())
-	check(err)
+	t.check(err)
 	return t.filterBalance(val.Balances, []string{s1, s2, s3, "BNB"})
 }
 
@@ -169,40 +169,45 @@ func (t *Trader) createOrder(symbol1, symbol2, symbol3, side1 string, quantity1 
 	newOrder, err := t.client.NewCreateOrderService().Symbol(base1 + quote1).
 		Side("BUY").Type("MARKET").QuoteOrderQty(quantity1).
 		Do(context.Background())
-	check(err)
+	t.check(err)
 	fmt.Println(binance_connector.PrettyPrint(newOrder))
+	tgMsg += fmt.Sprintf("Order: %s \n", binance_connector.PrettyPrint(newOrder))
 
 	t.getBalance(base1, quote1, quote2)
 	fmt.Println("Balance: ", balance)
+	tgMsg += fmt.Sprintf("Balance: %s \n", balance)
 
 	quantity2, _ := strconv.ParseFloat(newOrder.(*binance_connector.CreateOrderResponseFULL).ExecutedQty, 64)
 	scale = math.Pow(10, float64(base2Decimals))
 	floatQuantity2 := math.Floor(quantity2*scale) / scale
 
-	check(err)
+	t.check(err)
 	fmt.Println("Quantity2: ", floatQuantity2)
 
 	newOrder, err = t.client.NewCreateOrderService().Symbol(base2 + quote2).
 		Side("SELL").Type("MARKET").Quantity(floatQuantity2).
 		Do(context.Background())
-	check(err)
+	t.check(err)
 	fmt.Println(binance_connector.PrettyPrint(newOrder))
+	tgMsg += fmt.Sprintf("Order: %s \n", binance_connector.PrettyPrint(newOrder))
 
 	t.getBalance(base1, quote1, quote2)
 	fmt.Println("Balance: ", balance)
+	tgMsg += fmt.Sprintf("Balance: %s \n", balance)
 
 	quantity3, _ := strconv.ParseFloat(newOrder.(*binance_connector.CreateOrderResponseFULL).CumulativeQuoteQty, 64)
 	scale = math.Pow(10, float64(base3Decimals))
 	floatQuantity3 := math.Floor(quantity3*scale) / scale
 
-	check(err)
+	t.check(err)
 
 	fmt.Println("Quantity3: ", floatQuantity3)
 	newOrder, err = t.client.NewCreateOrderService().Symbol(base3 + quote3).
 		Side("SELL").Type("MARKET").Quantity(floatQuantity3).
 		Do(context.Background())
-	check(err)
+	t.check(err)
 	fmt.Println(binance_connector.PrettyPrint(newOrder))
+	tgMsg += fmt.Sprintf("Order: %s \n", binance_connector.PrettyPrint(newOrder))
 
 	balance = t.getBalance(base1, quote1, quote2)
 	fmt.Println("Balance: ", balance)
@@ -214,8 +219,9 @@ func (t *Trader) createOrder(symbol1, symbol2, symbol3, side1 string, quantity1 
 	t.telegramCh <- tgMsg
 }
 
-func check(e error) {
+func (t *Trader) check(e error) {
 	if e != nil {
+		t.telegramCh <- fmt.Sprintf("Error: %s", e)
 		panic(e)
 	}
 }
@@ -234,7 +240,9 @@ func main() {
 	wg.Add(1)
 
 	err := godotenv.Load()
-	check(err)
+	if err != nil {
+		panic(err)
+	}
 
 	// BINANCE_API_KEY := os.Getenv("TEST_BINANCE_API_KEY")
 	// BINANCE_API_SECRET := os.Getenv("TEST_BINANCE_API_SECRET")
