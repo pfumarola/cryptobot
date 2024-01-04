@@ -97,8 +97,8 @@ func (t *Trader) onTick(ticker *time.Ticker, done chan bool) {
 					maxPotentialProfitBBS = potentialProfitBBS
 				}
 			}
-			timestamp := time.Now().Format("2006-01-02 15:04:05")
-			fmt.Println(timestamp, " Max potential profit: ", fmt.Sprintf("%.8f", maxPotentialProfitBSS), " ", fmt.Sprintf("%.8f", maxPotentialProfitBBS))
+			//timestamp := time.Now().Format("2006-01-02 15:04:05")
+			//fmt.Println(timestamp, " Max potential profit: ", fmt.Sprintf("%.8f", maxPotentialProfitBSS), " ", fmt.Sprintf("%.8f", maxPotentialProfitBBS))
 		}
 	}
 }
