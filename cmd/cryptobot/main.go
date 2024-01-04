@@ -97,8 +97,8 @@ func (t *Trader) onTick(ticker *time.Ticker, done chan bool) {
 					maxPotentialProfitBBS = potentialProfitBBS
 				}
 			}
-			//timestamp := time.Now().Format("2006-01-02 15:04:05")
-			//fmt.Println(timestamp, " Max potential profit: ", fmt.Sprintf("%.8f", maxPotentialProfitBSS), " ", fmt.Sprintf("%.8f", maxPotentialProfitBBS))
+			timestamp := time.Now().Format("2006-01-02 15:04:05")
+			fmt.Println(timestamp, " Max potential profit: ", fmt.Sprintf("%.8f", maxPotentialProfitBSS), " ", fmt.Sprintf("%.8f", maxPotentialProfitBBS))
 		}
 	}
 }
@@ -265,19 +265,51 @@ func main() {
 
 	trader.ticker()
 
+	websocketStreamClient := binance_connector.NewWebsocketStreamClient(true)
+
+	wsHandler := func(event *binance_connector.WsBookTickerEvent) {
+		for _, v := range trader.bookTick {
+			if v.Symbol == event.Symbol {
+				v.AskPrice = event.BestAskPrice
+				v.AskQty = event.BestAskQty
+				v.BidPrice = event.BestBidPrice
+				v.BidQty = event.BestBidQty
+				return
+			}
+		}
+	}
+
+	errHandler := func(err error) {
+		fmt.Println(err)
+	}
+
+	//convert trader.exchangeInfo.Symbols to an arary of strings
+	var symbols []string
+	for _, v := range trader.exchangeInfo.Symbols {
+		symbols = append(symbols, v.Symbol)
+	}
+
+	// Depth stream subscription
+	doneCh, stopCh, err := websocketStreamClient.WsCombinedBookTickerServe(symbols, wsHandler, errHandler)
+
+	defer func() {
+		stopCh <- struct{}{}
+		<-doneCh
+	}()
+
 	wg.Wait()
 }
 
 func broker(TELEGRAM_TOKEN string, TELEGRAM_CHAT_ID string, telegramCh chan string) {
-	var telegramBot *internal.TelegramBot
+	// var telegramBot *internal.TelegramBot
 
-	telegramBot = internal.NewTelegramBot(TELEGRAM_TOKEN)
-	go telegramBot.Start()
+	// telegramBot = internal.NewTelegramBot(TELEGRAM_TOKEN)
+	// go telegramBot.Start()
 	for {
 		select {
 		case msg := <-telegramCh:
 			_ = msg
-			telegramBot.SendMessage(TELEGRAM_CHAT_ID, msg)
+			// telegramBot.SendMessage(TELEGRAM_CHAT_ID, msg)
 		}
 	}
 }
