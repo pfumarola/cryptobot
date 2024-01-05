@@ -260,7 +260,7 @@ func main() {
 
 	telegramCh := make(chan string)
 
-	trader := NewTrader(client, "USDT", 0.05, 0.00075, 100, telegramCh) // 0.01 -> 1% min profitability
+	trader := NewTrader(client, "USDT", 0.005, 0.00075, 100, telegramCh) // 0.01 -> 1% min profitability
 
 	go broker(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, telegramCh)
 
