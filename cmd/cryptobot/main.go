@@ -259,7 +259,7 @@ func main() {
 
 	telegramCh := make(chan string)
 
-	trader := NewTrader(client, "USDT", 0.01, 0.00075, 100, telegramCh) // 0.01 -> 1% min profitability
+	trader := NewTrader(client, "USDT", 0.012, 0.00075, 100, telegramCh) // 0.01 -> 1% min profitability
 
 	go broker(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, telegramCh)
 
@@ -301,15 +301,15 @@ func main() {
 }
 
 func broker(TELEGRAM_TOKEN string, TELEGRAM_CHAT_ID string, telegramCh chan string) {
-	// var telegramBot *internal.TelegramBot
+	var telegramBot *internal.TelegramBot
 
-	// telegramBot = internal.NewTelegramBot(TELEGRAM_TOKEN)
-	// go telegramBot.Start()
+	telegramBot = internal.NewTelegramBot(TELEGRAM_TOKEN)
+	go telegramBot.Start()
 	for {
 		select {
 		case msg := <-telegramCh:
 			_ = msg
-			// telegramBot.SendMessage(TELEGRAM_CHAT_ID, msg)
+			telegramBot.SendMessage(TELEGRAM_CHAT_ID, msg)
 		}
 	}
 }
