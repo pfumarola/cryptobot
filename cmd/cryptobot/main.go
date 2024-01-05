@@ -281,7 +281,7 @@ func main() {
 	}
 
 	errHandler := func(err error) {
-		fmt.Println(err)
+		trader.check(err)
 	}
 
 	//convert trader.exchangeInfo.Symbols to an arary of strings
@@ -289,14 +289,25 @@ func main() {
 	for _, v := range trader.exchangeInfo.Symbols {
 		symbols = append(symbols, v.Symbol)
 	}
-
-	// Depth stream subscription
-	doneCh, stopCh, err := websocketStreamClient.WsCombinedBookTickerServe(symbols, wsHandler, errHandler)
-
-	defer func() {
-		stopCh <- struct{}{}
-		<-doneCh
-	}()
+	// divide symbols in chunks of 190
+	var chunkSize = 190
+	var chunks [][]string
+	for i := 0; i < len(symbols); i += chunkSize {
+		end := i + chunkSize
+		if end > len(symbols) {
+			end = len(symbols)
+		}
+		chunks = append(chunks, symbols[i:end])
+	}
+	// create a stream subscription for each chunk
+	for _, v := range chunks {
+		doneCh, stopCh, err := websocketStreamClient.WsCombinedBookTickerServe(v, wsHandler, errHandler)
+		trader.check(err)
+		defer func() {
+			stopCh <- struct{}{}
+			<-doneCh
+		}()
+	}
 
 	wg.Wait()
 }
